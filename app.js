@@ -24,10 +24,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ── Utilità ── */
 
-async function fetchJSON(url) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.json();
+async function fetchJSON(url, timeoutMs) {
+    const ctrl = timeoutMs ? new AbortController() : null;
+    const timer = timeoutMs ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+        const resp = await fetch(url, ctrl ? { signal: ctrl.signal } : {});
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
 }
 
 function timeAgo(timestamp) {
@@ -544,10 +550,21 @@ function renderHNList(stories) {
 /* ── Reader integrato (nessuna tab, nessun popup) ── */
 
 async function openArticle(index) {
-    const item = currentItems[index];
-    if (!item) return;
+    // Se il primo click arriva un istante prima che la lista sia pronta, riprova
+    let item = currentItems[index];
+    if (!item) {
+        await new Promise((r) => setTimeout(r, 120));
+        item = currentItems[index];
+    }
+    if (!item) {
+        console.warn('[HubNews] openArticle: articolo mancante (index=' + index + ', len=' + currentItems.length + ')');
+        return;
+    }
     const link = item.url || item.link;
-    if (!link) return;
+    if (!link) {
+        console.warn('[HubNews] openArticle: nessun link per l’articolo');
+        return;
+    }
 
     showView('reader-view');
     const reader = $('reader-content');
@@ -555,6 +572,7 @@ async function openArticle(index) {
     const color = item._color || (channels.find((c) => c.key === activeKey) || {}).color || '#5b8cff';
     const title = item.title_it || item.title || 'Senza titolo';
     const isIt = item.lang === 'it';
+    const desc = (item.description || '').trim();
 
     reader.innerHTML = `
         <div class="reader-head" style="--c:${color}">
@@ -568,9 +586,15 @@ async function openArticle(index) {
         <div class="reader-loading" id="reader-loading"><div class="spinner"></div><div>Caricamento articolo…</div></div>
         <div class="reader-body" id="reader-body" hidden></div>`;
 
+    const body = $('reader-body');
+    // Anteprima immediata con la descrizione: il reader non resta mai vuoto durante il caricamento
+    if (desc) {
+        body.innerHTML = `<div class="reader-text"><p>${escapeHtml(desc)}</p></div>`;
+        body.hidden = false;
+    }
+
     try {
-        const art = await fetchJSON(`${API}?action=article&url=${encodeURIComponent(link)}`);
-        const body = $('reader-body');
+        const art = await fetchJSON(`${API}?action=article&url=${encodeURIComponent(link)}`, 20000);
         $('reader-loading')?.remove();
         body.hidden = false;
 
@@ -581,9 +605,9 @@ async function openArticle(index) {
                 const translated = await translateArticleBody(body.querySelector('.reader-text'));
                 if (translated) addTranslateToggle(reader);
             }
-        } else {
-            body.innerHTML = `
-                <div class="reader-text">${escapeHtml(item.description || 'Contenuto non disponibile nel lettore integrato.')}</div>`;
+        } else if (!desc) {
+            // né articolo né descrizione: messaggio chiaro, mai una schermata vuota
+            body.innerHTML = `<div class="reader-text"><p>Contenuto non disponibile nel lettore integrato.</p></div>`;
         }
         // insertAdjacentHTML: aggiunge SENZA ri-parsare, così le mappe del toggle restano valide
         body.insertAdjacentHTML('beforeend', `<p class="reader-original"><a href="${escapeAttr(link)}" target="_blank" rel="noopener">Apri nel sito originale ↗</a></p>`);
@@ -594,13 +618,14 @@ async function openArticle(index) {
                 <div class="comments-section"><h3>💬 Commenti (${item.descendants})</h3><div id="reader-comments"></div></div>`);
             renderComments($('reader-comments'), item.id);
         }
-    } catch {
-        const body = $('reader-body');
+    } catch (err) {
+        console.warn('[HubNews] articolo non caricato:', err && err.message);
         $('reader-loading')?.remove();
         body.hidden = false;
-        body.innerHTML = `
-            <div class="reader-text">${escapeHtml(item.description || 'Non è stato possibile caricare l’articolo.')}</div>
-            <p class="reader-original"><a href="${escapeAttr(link)}" target="_blank" rel="noopener">Apri nel sito originale ↗</a></p>`;
+        if (!desc) {
+            body.innerHTML = `<div class="reader-text"><p>Non è stato possibile caricare l’articolo integrato.</p></div>`;
+        }
+        body.insertAdjacentHTML('beforeend', `<p class="reader-original"><a href="${escapeAttr(link)}" target="_blank" rel="noopener">Apri nel sito originale ↗</a></p>`);
     }
 }
 

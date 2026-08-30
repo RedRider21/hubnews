@@ -52,4 +52,7 @@ cd "$DIR"
 # Apri il browser se possibile (il più delle volte) dopo un breve attesa
 ( sleep 1 && if command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL" >/dev/null 2>&1 || true; fi ) &
 
+# Più worker: una richiesta lenta (es. un feed o un articolo) non blocca le altre.
+# Richiede PHP >= 7.4; se non disponibile, PHP parte comunque single-threaded.
+export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-4}"
 exec php -S "${HOST}:${PORT}" 2>&1
