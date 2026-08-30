@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubNews — Notizie Tech da fonti attendibili</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-logo">⚡</div>
+            <div class="brand-text">
+                <h1>Hub<span>News</span></h1>
+                <p>Hardware · Software · AI · Sicurezza · Italia</p>
+            </div>
+        </div>
+        <div class="header-controls">
+            <label class="auto-refresh">
+                <input type="checkbox" id="auto-refresh">
+                Auto-aggiornamento
+            </label>
+            <button class="btn-icon" id="theme-btn" aria-label="Cambia tema" title="Cambia tema">🌙</button>
+            <button class="btn-icon" id="settings-btn" aria-label="Impostazioni feed" title="Impostazioni feed">⚙️</button>
+            <button class="btn btn-primary" id="refresh-btn">Aggiorna</button>
+        </div>
+    </header>
+
+    <nav class="channels" id="channels-nav" aria-label="Canali"></nav>
+
+    <div class="status-bar">
+        <span id="status-text">Avvio…</span>
+        <span id="status-note">Titoli tradotti automaticamente in italiano</span>
+    </div>
+
+    <main class="container">
+        <div class="view" id="list-view">
+            <div class="list-header" id="list-header"></div>
+            <div class="story-list" id="story-list"></div>
+        </div>
+
+        <div class="view" id="detail-view">
+            <button class="btn btn-back" id="back-btn">&larr; Torna alla lista</button>
+            <div id="detail-content"></div>
+        </div>
+
+        <div class="view" id="reader-view">
+            <button class="btn btn-back" id="reader-back">&larr; Torna alla lista</button>
+            <div id="reader-content"></div>
+        </div>
+    </main>
+
+    <footer class="app-footer">
+        <span>Fonti: Hacker News · Tom's Hardware · Phoronix · TechRadar · Ars Technica · The Register · LWN.net · GitHub Blog · OpenAI · Google DeepMind · MIT Technology Review · The Verge · The Hacker News · BleepingComputer · Krebs on Security · SANS ISC · CyberSecurity 360 · Punto Informatico · Agenda Digitale · Tom's Hardware Italia</span>
+    </footer>
+
+    <div class="modal" id="settings-modal" hidden>
+        <div class="modal-backdrop" onclick="closeSettings()"></div>
+        <div class="modal-panel" role="dialog" aria-modal="true" aria-label="Impostazioni feed">
+            <div class="modal-header">
+                <h2>⚙️ Feed personalizzati</h2>
+                <button class="btn-icon" id="settings-close" aria-label="Chiudi" title="Chiudi">✕</button>
+            </div>
+            <p class="modal-hint">Aggiungi qualsiasi feed RSS/Atom: comparirà nel canale <b>📌 Personalizzati</b>
+                con nome, lingua e colore propri. Tutto resta salvato sul tuo browser.</p>
+            <form id="feed-form" autocomplete="off">
+                <label class="form-label" for="cf-name">Nome (facoltativo — altrimenti il dominio)</label>
+                <input class="form-input" type="text" id="cf-name" placeholder="Es. Il mio blog tech">
+                <label class="form-label" for="cf-url">URL del feed RSS/Atom *</label>
+                <input class="form-input" type="url" id="cf-url" placeholder="https://esempio.it/feed.xml" required>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label class="form-label" for="cf-lang">Lingua dei titoli</label>
+                        <select class="form-input" id="cf-lang">
+                            <option value="auto">Auto (rileva)</option>
+                            <option value="it">Italiano</option>
+                            <option value="en">Inglese</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label" for="cf-color">Colore</label>
+                        <input class="form-input form-color" type="color" id="cf-color" value="#5b8cff">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" id="cf-add-btn">Aggiungi feed</button>
+                    <span id="cf-status" class="form-status"></span>
+                </div>
+            </form>
+            <h3 class="modal-sub">Feed salvati</h3>
+            <ul class="feed-list" id="cf-list"></ul>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

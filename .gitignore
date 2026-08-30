@@ -1,0 +1,6 @@
+# Cache dei feed lato server (rigenerata automaticamente da api.php)
+cache/
+
+# Log e file temporanei
+*.log
+.DS_Store
