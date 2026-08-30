@@ -496,19 +496,33 @@ async function loadHN() {
         }
 
         const ids = await fetchJSON(`${API}?action=top&limit=30`);
-        const stories = [];
-        for (let i = 0; i < ids.length; i += 10) {
-            const batch = ids.slice(i, i + 10);
-            // allSettled + timeout per item: un singolo item lento (HN API)
-            // non deve bloccare l'intero batch e lasciare lo skeleton fermo.
-            const results = await Promise.allSettled(batch.map((id) => getStory(id, 8000)));
-            stories.push(...results.filter((r) => r.status === 'fulfilled' && r.value).map((r) => r.value));
-            renderHNList(stories);
-        }
-        hnStories = stories;
-        currentItems = stories;
-        await translateHN(stories);
-        renderHNList(stories);
+        // Render incrementale: ogni storia compare appena arriva (in ordine di
+        // classifica HN), senza aspettare l'item più lento del gruppo.
+        const stories = new Array(ids.length).fill(null);
+        let pending = ids.length;
+        let lastReady = 0;
+        await new Promise((resolveAll) => {
+            ids.forEach((id, idx) => {
+                getStory(id, 8000)
+                    .then((s) => { if (s) stories[idx] = s; })
+                    .catch(() => {})
+                    .finally(() => {
+                        pending--;
+                        let ready = 0;
+                        while (ready < stories.length && stories[ready]) ready++;
+                        if (ready > lastReady) {
+                            lastReady = ready;
+                            renderHNList(stories.slice(0, ready));
+                        }
+                        if (pending === 0) resolveAll();
+                    });
+            });
+        });
+        const loaded = stories.filter(Boolean);
+        hnStories = loaded;
+        currentItems = loaded;
+        await translateHN(loaded);
+        renderHNList(loaded);
         updateStatus(`Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')} · ${stories.length} notizie tradotte`);
     } catch (err) {
         showError('story-list', `Errore nel caricamento: ${err.message}`);
@@ -939,6 +953,9 @@ async function init() {
         channels = [{ key: 'hackernews', label: 'Hacker News', icon: '🗞️', color: '#ff6600', special: true }];
     }
     renderTabs();
+    // La vista lista va attivata subito, altrimenti le notizie del primo
+    // canale vengono renderizzate in una view display:none ("nulla sotto i bottoni").
+    showList();
 
     const requested = new URLSearchParams(location.search).get('channel');
     const valid = requested && channels.some((c) => c.key === requested);
