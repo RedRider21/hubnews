@@ -133,12 +133,18 @@ function openDB() {
 }
 
 function idbReq(store, mode, op) {
-    return new Promise((resolve, reject) => {
+    // Mai fallire per colpa di IndexedDB: se non è pronto, si procede senza cache
+    return new Promise((resolve) => {
         if (!db) return resolve(null);
-        const tx = db.transaction(store, mode);
+        let tx;
+        try {
+            tx = db.transaction(store, mode);
+        } catch {
+            return resolve(null);
+        }
         const req = op(tx.objectStore(store));
         req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onerror = () => resolve(null);
     });
 }
 
@@ -153,12 +159,12 @@ const dbPut = (item) => idbReq(STORE_NAME, 'readwrite', (s) => s.put({ ...item, 
 const trGet = (text) => idbReq(TR_STORE, 'readonly', (s) => s.get(text));
 const trSet = (text, tr) => idbReq(TR_STORE, 'readwrite', (s) => s.put({ t: text, tr, _at: Date.now() }));
 
-async function getStory(id) {
+async function getStory(id, timeoutMs = 8000) {
     const cached = await dbGet(id);
     if (cached && (Date.now() - cached._cachedAt) < HN_CACHE_TTL) {
         return cached;
     }
-    const item = await fetchJSON(`${API}?action=item&id=${id}`);
+    const item = await fetchJSON(`${API}?action=item&id=${id}`, timeoutMs);
     await dbPut(item);
     return item;
 }
@@ -479,22 +485,24 @@ async function loadHN() {
     btn.disabled = true;
     btn.textContent = 'Aggiornamento…';
 
-    const cachedStories = await dbGetAll();
-    if (cachedStories.length > 0) {
-        currentItems = cachedStories;
-        renderHNList(cachedStories);
-        updateStatus('Notizie in cache · aggiornamento in corso…');
-    } else {
-        showSkeleton('story-list', 8);
-    }
-
     try {
+        const cachedStories = await dbGetAll();
+        if (cachedStories.length > 0) {
+            currentItems = cachedStories;
+            renderHNList(cachedStories);
+            updateStatus('Notizie in cache · aggiornamento in corso…');
+        } else {
+            showSkeleton('story-list', 8);
+        }
+
         const ids = await fetchJSON(`${API}?action=top&limit=30`);
         const stories = [];
         for (let i = 0; i < ids.length; i += 10) {
             const batch = ids.slice(i, i + 10);
-            const results = await Promise.all(batch.map((id) => getStory(id)));
-            stories.push(...results.filter(Boolean));
+            // allSettled + timeout per item: un singolo item lento (HN API)
+            // non deve bloccare l'intero batch e lasciare lo skeleton fermo.
+            const results = await Promise.allSettled(batch.map((id) => getStory(id, 8000)));
+            stories.push(...results.filter((r) => r.status === 'fulfilled' && r.value).map((r) => r.value));
             renderHNList(stories);
         }
         hnStories = stories;
@@ -603,7 +611,7 @@ async function openArticle(index) {
             if (art.truncated) body.insertAdjacentHTML('beforeend', '<p class="reader-more">Il testo è troncato per motivi di spazio.</p>');
             if (!isIt) {
                 const translated = await translateArticleBody(body.querySelector('.reader-text'));
-                if (translated) addTranslateToggle(reader);
+                if (translated) addTranslateToggle(reader, item.title, title);
             }
         } else if (!desc) {
             // né articolo né descrizione: messaggio chiaro, mai una schermata vuota
@@ -751,7 +759,7 @@ async function translateArticleBody(container) {
     return true;
 }
 
-function addTranslateToggle(reader) {
+function addTranslateToggle(reader, originalTitle, translatedTitle) {
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm';
     btn.textContent = '🌐 Mostra originale';
@@ -760,6 +768,13 @@ function addTranslateToggle(reader) {
         const showOriginal = articleI18n.translatedMode; // ora mostriamo la traduzione → passa all'originale
         for (const [el, tr] of articleI18n.translated) {
             el.textContent = showOriginal ? articleI18n.original.get(el) : tr;
+        }
+        // Anche il titolo torna alla versione originale (e viceversa)
+        if (originalTitle && translatedTitle && originalTitle !== translatedTitle) {
+            const titleEl = reader.querySelector('.reader-title');
+            const orig = reader.querySelector('.card-title-orig');
+            if (titleEl) titleEl.textContent = showOriginal ? originalTitle : translatedTitle;
+            if (orig) orig.style.display = showOriginal ? 'none' : '';
         }
         articleI18n.translatedMode = !showOriginal;
         btn.textContent = showOriginal ? '🌐 Mostra traduzione' : '🌐 Mostra originale';
@@ -904,11 +919,9 @@ function initTheme() {
 
 async function init() {
     initTheme();
-    try {
-        db = await openDB();
-    } catch {
-        db = null;
-    }
+    // IndexedDB in parallelo: il primo canale si carica comunque subito,
+    // la cache (titoli tradotti, story HN) arriva quando il DB è pronto.
+    openDB().then((d) => { db = d; }).catch(() => { db = null; });
     $('refresh-btn').addEventListener('click', refreshActiveChannel);
     $('auto-refresh').addEventListener('change', toggleAutoRefresh);
     $('back-btn').addEventListener('click', showList);
